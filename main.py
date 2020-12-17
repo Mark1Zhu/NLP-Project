@@ -2,6 +2,7 @@ import numpy as np
 from nltk.corpus import stopwords
 from nltk.stem.snowball import SnowballStemmer
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
@@ -11,23 +12,39 @@ from scipy.sparse import vstack
 from dataLoader import loadCombinedNews, splitData
 
 
-def testHeadline(model, daysBack, arrFlag): #test per headline, daysBack is how many days to look backwards
+def testHeadline(model, daysBack=0, arrFlag=0, proporFlag=0, topX=-1): #test per headline
+    # daysBack is how many days to look backwards
+    # arrFlag is whether or not to convert data .toarray() (important for some models to function; slows calculations)
+    # proporFlag is whether to rate all headlines the same or proportional
+    # topX is looking at the top X headlines instead of all
+    # NOTE: daysBack cannot be used simultaneously with proporFlag or topX
     def findMostCommonPrediction(x,y,good,bad):
         for dayNum in range(x+daysBack, y): #per day
             posSentence = 0
             negSentence = 0
-            for days in range(daysBack+1):
-                for sentence in dataVecByDay[dayNum-days]: #for each sentence in that day
+            for days in range(daysBack+1): #"days" is used to reference a day in the past
+                sentencesToIterate = min(topX,len(dataVecByDay[dayNum-days]))
+                for sentenceNum in range(sentencesToIterate): #for sentences in that day
+                    sentence = dataVecByDay[dayNum-days][sentenceNum]
                     if arrFlag == 1:
                         sentencePredict = model.predict(sentence.toarray())[0]
                     else:
                         sentencePredict = model.predict(sentence)[0]
-                    if sentencePredict == '1':
-                        posSentence += 1
-                    elif sentencePredict == '0':
-                        negSentence += 1
-                    else:
-                        print(sentencePredict)
+
+                    if proporFlag == 0: #if we are doing standard weighing
+                        if sentencePredict == '1':
+                            posSentence += 1
+                        elif sentencePredict == '0':
+                            negSentence += 1
+                        else:
+                            print(sentencePredict)
+                    else: #or proportional weighing
+                        if sentencePredict == '1':
+                            posSentence += 30 - sentenceNum
+                        elif sentencePredict == '0':
+                            posSentence += 30 - sentenceNum
+                        else:
+                            print(sentencePredict)
             if posSentence > negSentence: #generate prediction per sentence, and choose most common prediction per day
                 dayPredict = '1'
             elif posSentence < negSentence:
@@ -89,7 +106,8 @@ if __name__ == "__main__":
             day[sentenceNum] = [stemmer.stem(word) for word in day[sentenceNum] if word not in stopwords]
 
     #training
-    vectorizer = CountVectorizer()
+    vectorizer = CountVectorizer(ngram_range=(1,1))
+    tfidf = TfidfVectorizer(ngram_range=(1,1))
     gnb = GaussianNB()
     logit = LogisticRegression(max_iter=1000)
     svm = SVC(kernel='rbf')
@@ -105,7 +123,8 @@ if __name__ == "__main__":
             dataVec.append(' '.join(day[sentenceNum]))
             counter += 1
         indexer.append(counter)
-    dataVec = vectorizer.fit_transform(dataVec)
+    #dataVec = vectorizer.fit_transform(dataVec)
+    dataVec = tfidf.fit_transform(dataVec)
 
     counter = 0
     dataVecByDay = []
